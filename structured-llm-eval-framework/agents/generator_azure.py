@@ -18,9 +18,8 @@ import time
 from typing import Any, Dict
 
 from dotenv import load_dotenv
-from azure.ai.openai import OpenAIClient
-from azure.core.credentials import AzureKeyCredential
-from azure.core.exceptions import AzureError, HttpResponseError
+from openai import AzureOpenAI, OpenAIError
+from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 from jsonschema import Draft7Validator
 
 
@@ -28,10 +27,10 @@ load_dotenv()  # Load variables from .env if present
 
 logger = logging.getLogger(__name__)
 
-_CLIENT: OpenAIClient | None = None
+_CLIENT: AzureOpenAI | None = None
 
 
-def _get_azure_client() -> OpenAIClient:
+def _get_azure_client() -> AzureOpenAI:
     """
     Construct (or retrieve) a cached Azure OpenAI client from env vars.
 
@@ -53,17 +52,23 @@ def _get_azure_client() -> OpenAIClient:
             "Set AZURE_OPENAI_KEY and AZURE_OPENAI_ENDPOINT in your .env file."
         )
 
-    _CLIENT = OpenAIClient(endpoint=endpoint, credential=AzureKeyCredential(api_key))
+    api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+    _CLIENT = AzureOpenAI(
+        api_key=api_key,
+        azure_endpoint=endpoint,
+        api_version=api_version,
+    )
     return _CLIENT
 
 
-def _is_transient_error(error: AzureError) -> bool:
+def _is_transient_error(error: Exception) -> bool:
     """
     Best‑effort detection of transient errors (e.g. 429/5xx).
     """
-    if isinstance(error, HttpResponseError):
-        status = getattr(error, "status_code", None)
-        if status in {429, 500, 502, 503, 504}:
+    if isinstance(error, (RateLimitError, APIConnectionError, APITimeoutError)):
+        return True
+    if isinstance(error, APIStatusError):
+        if error.status_code in {429, 500, 502, 503, 504}:
             return True
     return False
 
@@ -172,7 +177,7 @@ def generate_structured_output(
                 },
             )
 
-            response = client.get_chat_completions(
+            response = client.chat.completions.create(
                 model=deployment,
                 messages=messages,
                 temperature=temperature,
@@ -223,7 +228,7 @@ def generate_structured_output(
 
             return obj
 
-        except AzureError as exc:
+        except OpenAIError as exc:
             last_error = exc
             is_transient = _is_transient_error(exc)
             logger.warning(

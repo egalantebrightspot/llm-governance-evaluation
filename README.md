@@ -105,3 +105,21 @@ structured-llm-eval-framework/
 │   └── test_metrics.py
 │
 └── README.md
+
+Run the API
+Install dependencies:
+
+pip install -r structured-llm-eval-framework/requirements.txt
+
+Start from workspace root:
+
+uvicorn api.main:app --app-dir structured-llm-eval-framework --reload --port 8000
+
+Or start from the framework folder:
+
+cd structured-llm-eval-framework
+uvicorn api.main:app --reload --port 8000
+
+If port 8000 is already in use, run with a different port:
+
+uvicorn api.main:app --reload --port 8001
