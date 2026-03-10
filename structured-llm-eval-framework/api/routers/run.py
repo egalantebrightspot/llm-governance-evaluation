@@ -24,11 +24,15 @@ class RunRequest(BaseModel):
 
 
 class RunResponse(BaseModel):
+    trace_id: str | None = None
     task: str
-    output: Dict[str, Any]
-    validation: Dict[str, Any]
-    critique: Dict[str, Any]
-    scores: Dict[str, float]
+    mode: str | None = None
+    config: Dict[str, Any] | None = None
+    stages: Dict[str, Any] | None = None
+    output: Dict[str, Any] | None = None
+    validation: Dict[str, Any] | None = None
+    critique: Dict[str, Any] | None = None
+    scores: Dict[str, float] | None = None
 
 
 @router.post("", response_model=RunResponse)

@@ -15,19 +15,39 @@ import json
 import logging
 import os
 import time
+from pathlib import Path
 from typing import Any, Dict
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from openai import AzureOpenAI, OpenAIError
 from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 from jsonschema import Draft7Validator
 
 
-load_dotenv()  # Load variables from .env if present
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DOTENV_PATH = PROJECT_ROOT / ".env"
+
+load_dotenv(dotenv_path=DOTENV_PATH, override=True)  # Load variables from project .env
 
 logger = logging.getLogger(__name__)
 
 _CLIENT: AzureOpenAI | None = None
+_CLIENT_CONFIG: tuple[str, str, str] | None = None
+
+
+def _get_config_value(file_values: dict[str, str | None], *names: str) -> str | None:
+    """
+    Prefer values from the project .env file, then fall back to process env.
+    """
+    for name in names:
+        value = file_values.get(name)
+        if value:
+            return value
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return None
 
 
 def _get_azure_client() -> AzureOpenAI:
@@ -39,25 +59,43 @@ def _get_azure_client() -> AzureOpenAI:
       - AZURE_OPENAI_ENDPOINT
     """
     global _CLIENT
+    global _CLIENT_CONFIG
 
-    if _CLIENT is not None:
-        return _CLIENT
+    dotenv_values_map = {
+        str(key): (None if value is None else str(value))
+        for key, value in dotenv_values(DOTENV_PATH).items()
+    }
 
-    api_key = os.getenv("AZURE_OPENAI_KEY")
-    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+    api_key = _get_config_value(dotenv_values_map, "AZURE_OPENAI_KEY", "api_key")
+    endpoint = _get_config_value(dotenv_values_map, "AZURE_OPENAI_ENDPOINT", "endpoint")
 
     if not api_key or not endpoint:
         raise RuntimeError(
             "Azure OpenAI environment variables are not configured. "
-            "Set AZURE_OPENAI_KEY and AZURE_OPENAI_ENDPOINT in your .env file."
+            "Set AZURE_OPENAI_KEY/AZURE_OPENAI_ENDPOINT or "
+            "api_key/endpoint in your .env file."
         )
 
-    api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+    # Accept either the Azure resource root or a v1-style endpoint and
+    # normalize to the resource root expected by AzureOpenAI.azure_endpoint.
+    if "/openai/" in endpoint:
+        endpoint = endpoint.split("/openai/")[0].rstrip("/")
+
+    api_version = (
+        _get_config_value(dotenv_values_map, "AZURE_OPENAI_API_VERSION")
+        or "2024-02-15-preview"
+    )
+
+    client_config = (api_key, endpoint, api_version)
+    if _CLIENT is not None and _CLIENT_CONFIG == client_config:
+        return _CLIENT
+
     _CLIENT = AzureOpenAI(
         api_key=api_key,
         azure_endpoint=endpoint,
         api_version=api_version,
     )
+    _CLIENT_CONFIG = client_config
     return _CLIENT
 
 
@@ -133,10 +171,19 @@ def generate_structured_output(
     """
     client = _get_azure_client()
 
-    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+    dotenv_values_map = {
+        str(key): (None if value is None else str(value))
+        for key, value in dotenv_values(DOTENV_PATH).items()
+    }
+    deployment = _get_config_value(
+        dotenv_values_map,
+        "AZURE_OPENAI_DEPLOYMENT",
+        "deployment_name",
+    )
     if not deployment:
         raise RuntimeError(
-            "AZURE_OPENAI_DEPLOYMENT is not set. Configure it in your .env file."
+            "AZURE_OPENAI_DEPLOYMENT or deployment_name is not set. "
+            "Configure it in your .env file."
         )
 
     system_instructions = (
