@@ -1,0 +1,4 @@
+"""
+Metric‑producing scoring agent.
+"""
+

@@ -1,0 +1,4 @@
+"""
+Router for validation endpoints.
+"""
+

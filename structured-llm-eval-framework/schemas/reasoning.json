@@ -1,0 +1,7 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ReasoningTask",
+  "description": "Schema for reasoning‑style outputs.",
+  "type": "object"
+}
+
